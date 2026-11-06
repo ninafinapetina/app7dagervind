@@ -683,7 +683,7 @@ function wmoType(code, precip) {
   if (code >= 95) return "thunder";
   if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "snow";
   if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
-    if (code === 65 || code === 82 || precip >= 2) return "heavy";
+    if (precip > 2) return "heavy";
     if (precip >= 0.5 || code === 63 || code === 81) return "rain";
     return "light";
   }
@@ -697,9 +697,9 @@ function metType(sym, precip) {
   const c = sym || "";
   if (c.includes("thunder")) return "thunder";
   if (c.includes("snow") || c.includes("sleet")) return precip > 0 || !c.includes("showers") ? "snow" : "cloudy";
-  if (c.includes("heavyrain")) return "heavy";
+  if (c.includes("heavyrain")) return precip > 2 ? "heavy" : "rain";   // mye regn = mer enn 2 mm i timen
   if (c.includes("lightrain")) return "light";
-  if (c.includes("rain")) return precip >= 2 ? "heavy" : precip >= 0.5 ? "rain" : "light";
+  if (c.includes("rain")) return precip > 2 ? "heavy" : precip >= 0.5 ? "rain" : "light";
   if (c.startsWith("clearsky")) return "clear";
   if (c.startsWith("fair") || c.startsWith("partlycloudy")) return "partly";
   return "cloudy";
@@ -1040,7 +1040,7 @@ function renderSel() {
   }
   let extra = "";
   const rainWind = ["light", "rain", "heavy", "thunder"].includes(h.type) && (h.wind || 0) > 10;
-  if (rainWind) extra = h.type === "thunder" ? "Det tordner, regner og blåser mye!" : "Det regner og blåser mye!";
+  if (rainWind) extra = h.type === "thunder" ? "Det tordner, regner og blåser mye!" : h.type === "heavy" ? "Det regner og blåser mye!" : "Det regner, og det blåser mye!";
   else if (h.type === "thunder") extra = "Det tordner, så hold deg gjerne inne!";
   else if (h.type === "heavy") extra = "Det regner mye nå.";
   else if (h.type === "snow") extra = "Det snør! Perfekt for snømann.";
@@ -1048,6 +1048,16 @@ function renderSel() {
   else if (key === "n09") extra = `Vinden er ${Math.round(h.wind)} m/s.`;
   else if ((key === "n07" || key === "n08") && h.uv >= 3) extra = "Husk solkrem og vann!";
   else if (key === "n08") extra = "Husk vannflaske!";
+  // 7 dager: regnbeskjeden gjelder hele dagen, så den ikke skifter fra punkt til punkt
+  if (long && !extra.startsWith("Nå er det")) {
+    const day = hrs.filter(x => sameDay(x.t, h.t)), wetPts = day.filter(x => ["light", "rain", "heavy", "thunder"].includes(x.type));
+    const total = wetPts.reduce((a, x) => a + x.precip, 0), windy = Math.max(...day.map(x => x.wind || 0)) > 10;
+    if (/regner|tordner/.test(extra)) extra = "";
+    if (total >= 10) extra = windy ? "Det regner og blåser mye!" : "Det regner mye!";
+    else if (wetPts.length && windy) extra = "Det regner, og det blåser mye!";
+    if (/snør/.test(extra)) extra = "";
+    if (!extra && day.some(x => x.type === "snow")) extra = "Det snør! Perfekt for snømann.";
+  }
   // natt (kl 22–06): hun minner om at man helst bør sove, men gir klesrådet likevel
   const hr = h.t.getHours(), night = hr >= 22 || hr < 6;
   const part = long ? tomorrowPart(h) : 0;
