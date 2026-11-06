@@ -191,7 +191,7 @@ h1 {
 .tip {
   position: absolute; z-index: 4; pointer-events: auto; cursor: grab;
   background: #fbfdff; border: 3px solid #3b78e3; border-radius: 20px;
-  padding: 6px 14px 8px; text-align: center; min-width: 0;
+  padding: 6px 14px 11px; text-align: center; min-width: 0;
   box-shadow: 0 6px 16px rgba(20, 70, 160, 0.22);
 }
 .tip::after {
@@ -201,6 +201,7 @@ h1 {
 .tip.below::after { bottom: auto; top: -11px; transform: rotate(225deg); }
 .tip .when { font: 600 1.15rem var(--display); color: #1b2fa0; }
 /* kompakt: temperatur og følt ved siden av hverandre, nedbør til venstre og vind til høyre */
+.tip > * { position: relative; z-index: 1; }   /* teksten ligger over den hvite halen */
 .tip .tr { display: flex; align-items: baseline; justify-content: center; gap: 10px; }
 .tip .t { font: 700 2.1rem/1.05 var(--display); color: #101a4f; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tip .f { font: 700 0.9rem/1.15 var(--body); color: #1c2650; white-space: nowrap; }
@@ -308,7 +309,7 @@ h1 {
   .meteo { padding: 22px 10px 16px; }
   .symbols { height: 44px; }
   .symbols .sym { width: 46px; height: 42px; }
-  .tip { min-width: 0; padding: 4px 10px 6px; border-radius: 14px; }
+  .tip { min-width: 0; padding: 4px 10px 9px; border-radius: 14px; }
   .tip .when { font-size: 0.95rem; }
   .tip .t { font-size: 1.5rem; }
   .tip .f { font-size: 0.72rem; }
@@ -565,7 +566,33 @@ const WET_TYPES = ["light", "rain", "heavy", "thunder"];
 const RANK = ["clear", "partly", "cloudy", "snow", "light", "rain", "heavy", "thunder"];
 // klær velges for et 2-timers vindu fra valgt time, så figuren ikke hopper for mye.
 // Kommer det regn i løpet av de 2 timene, sjekkes 4 timer: sammenhengende regn = regntøy, regn av og på (byger) = paraply.
+// i morgen i 7-dagersvisningen: 1 = fram til kl 16 (skoletid), 2 = etter kl 16
+function tomorrowPart(h) {
+  const tm = new Date(); tm.setDate(tm.getDate() + 1);
+  if (!sameDay(h.t, tm)) return 0;
+  return h.t.getHours() < 16 ? 1 : 2;
+}
 function outfitAt(hrs, i) {
+  if (state.view === "long" && tomorrowPart(hrs[i])) {
+    // i morgen: ett bilde fram til skoleslutt (kl 06–16) og ett for ettermiddag og kveld (kl 16–22), ut fra timevarselet
+    const part = tomorrowPart(hrs[i]), d0 = new Date(hrs[i].t);
+    const from = new Date(d0); from.setHours(part === 1 ? 6 : 16, 0, 0, 0);
+    const to = new Date(d0); to.setHours(part === 1 ? 16 : 22, 0, 0, 0);
+    const win = (state.allHours || []).filter(x => x.t >= from && x.t < to);
+    if (win.length >= 3) {
+      const wet = win.filter(x => WET_TYPES.includes(x.type));
+      const avg = win.reduce((a, x) => a + x.temp, 0) / win.length;
+      const h = { ...hrs[i], temp: avg, feels: win.reduce((a, x) => a + x.feels, 0) / win.length,
+        wind: Math.max(...win.map(x => x.wind || 0)), gust: Math.max(...win.map(x => x.gust || 0)),
+        type: win.reduce((a, x) => (RANK.indexOf(x.type) > RANK.indexOf(a) ? x.type : a), "clear") };
+      if (wet.length) {
+        if (h.type === "thunder" || h.type === "heavy" || wet.length >= win.length * 0.8) return "n10";   // vedvarende regn = regnjakke
+        return "n01p";                                                                                  // ellers paraply
+      }
+      if (h.type === "snow") return "n03";
+      return outfitFor({ ...h, type: "cloudy" });
+    }
+  }
   if (state.view === "long") {
     // 7 dager: ett bilde for hele dagen. Regn = paraply (regntøy hvis det regner hele dagen), ellers etter temperaturen på dagtid
     const day = hrs.filter(x => sameDay(x.t, hrs[i].t));
@@ -614,7 +641,7 @@ const NEED = ["den tykkeste vinterjakka", "varm jakke, lue og votter", "vest og 
 // ser opptil 8 timer fram: blir det så kaldt at man trenger mer klær?
 function coolerLater(i) {
   const hrs = state.hours, now = warmLevel(hrs[i].temp);
-  for (let k = i + 1; k <= i + 8 && k < hrs.length; k++) {
+  for (let k = i + 1; k <= i + 8 && k < hrs.length && sameDay(hrs[k].t, hrs[i].t); k++) {
     const lv = warmLevel(hrs[k].temp);
     if (lv < now) {
       const hr = hrs[k].t.getHours();
@@ -686,9 +713,10 @@ async function fetchMet(city) {
       const p = n1.details.precipitation_amount || 0;
       hours.push({ t: new Date(t), temp: d.air_temperature, feels: d.apparent_air_temperature ?? d.air_temperature, precip: p,
         type: metType(n1.summary.symbol_code, p), uv: d.ultraviolet_index_clear_sky || 0, wind: d.wind_speed || 0 });
-      if (hours.length === 25) break;
     }
     if (hours.length < 25) throw new Error("met for kort");
+    const allHours = hours.splice(25);
+    hours.all = hours.concat(allHours);   // timevarsel så langt det finnes (brukes for «i morgen» i 7-dagersvisningen)
     // 7 dager fram: én verdi hver 6. time (kl 00, 06, 12, 18 UTC) – langtidsvarselet fra ECMWF
     const long = [];
     for (const e of ts) {
@@ -759,6 +787,8 @@ async function load(city) {
   if (city !== state.city) return;
   state.hours = hours; state.live = true; state.sel = 0;
   state.long = hours.long || null;
+  state.allHours = hours.all || hours;
+  state.view = "day";   // nytt sted: start alltid med neste 24 timer
   if (!state.long) state.view = "day";
   $("#viewBtn").hidden = !state.long;
   setViewButton();
@@ -1000,7 +1030,8 @@ function renderSel() {
   else if (key === "n08") extra = "Husk vannflaske!";
   // natt (kl 22–06): hun minner om at man helst bør sove, men gir klesrådet likevel
   const hr = h.t.getHours(), night = hr >= 22 || hr < 6;
-  let main = FIG_TEXT[key].say(long ? (dayName === "I dag" || dayName === "I morgen" ? dayName : "På " + DAYS[h.t.getDay()]) : whenWords(h, i));
+  const part = long ? tomorrowPart(h) : 0;
+  let main = FIG_TEXT[key].say(long ? (part === 1 ? "I morgen fram til kl 16" : part === 2 ? "I morgen etter kl 16" : dayName === "I dag" ? dayName : "På " + DAYS[h.t.getDay()]) : whenWords(h, i));
   if (night && !long) {
     const rest = key === "n09" ? "trenger du <b>vindjakke og skjerf</b>, for det blåser!" : key === "n01p" ? "ta med <b>paraply</b>, for det kommer litt regn innimellom!" : FIG_TEXT[key].say("").trim();
     main = `I natt bør du helst sove! Men hvis du må ut og reise, ${rest}`;
