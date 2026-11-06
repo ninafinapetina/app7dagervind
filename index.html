@@ -446,7 +446,7 @@ h1 {
   </section>
   <aside class="uv" id="uv">
     <div class="txt">
-      <h3><span id="uvLevel">UV lav</span><span class="num" id="uvNum">1</span><span class="uv-day" id="uvDay">i dag</span></h3>
+      <h3><span id="uvLevel">UV lav</span><span class="num" id="uvNum">1</span></h3>
       <p id="uvText">Du trenger ikke solkrem i dag.</p>
     </div>
     <svg width="96" height="124" viewBox="0 0 96 124" aria-hidden="true">
@@ -1411,15 +1411,15 @@ function renderUV(sel) {
   const now = new Date(), tm = new Date(now); tm.setDate(tm.getDate() + 1);
   const label = sameDay(ref, now) ? "I dag" : sameDay(ref, tm) ? "I morgen"
     : `${DAYS[ref.getDay()][0].toUpperCase() + DAYS[ref.getDay()].slice(1)} ${ref.getDate()}. ${MONTHS[ref.getMonth()]}`;
-  const lv = uv <= 2 ? ["lav", "#217a1d", "#62d655", "Du trenger ikke solkrem.", "#f2fbef", "#ddf3e3"]
-    : uv <= 5 ? ["moderat", "#9a6a00", "#ffd84a", "Bruk solkrem midt på dagen.", "#fffbe8", "#fff0bf"]
-    : uv <= 7 ? ["høy", "#c2510b", "#ffa04a", "Husk solkrem, solhatt og skygge!", "#fff4e8", "#ffe0c2"]
-    : uv <= 10 ? ["svært høy", "#b3171f", "#ff6a6a", "Hold deg i skyggen midt på dagen og bruk mye solkrem!", "#fff0ef", "#ffd6d3"]
-    : ["ekstrem", "#6b1fa6", "#b36bff", "Hold deg inne eller i skyggen midt på dagen!", "#f7efff", "#e6d4ff"];
+  const d = label === "I dag" ? "i dag" : label === "I morgen" ? "i morgen" : "på " + DAYS[ref.getDay()];
+  const lv = uv <= 2 ? ["lav", "#217a1d", "#62d655", `Du trenger ikke solkrem ${d}.`, "#f2fbef", "#ddf3e3"]
+    : uv <= 5 ? ["moderat", "#9a6a00", "#ffd84a", `Bruk solkrem midt på dagen ${d}.`, "#fffbe8", "#fff0bf"]
+    : uv <= 7 ? ["høy", "#c2510b", "#ffa04a", `Husk solkrem, solhatt og skygge ${d}!`, "#fff4e8", "#ffe0c2"]
+    : uv <= 10 ? ["svært høy", "#b3171f", "#ff6a6a", `Hold deg i skyggen midt på dagen ${d}, og bruk mye solkrem!`, "#fff0ef", "#ffd6d3"]
+    : ["ekstrem", "#6b1fa6", "#b36bff", `Hold deg inne eller i skyggen midt på dagen ${d}!`, "#f7efff", "#e6d4ff"];
   const box = $("#uv");
   box.style.setProperty("--uvc", lv[1]); box.style.setProperty("--uvl", lv[2]);
   box.style.background = `linear-gradient(135deg, ${lv[4]}, ${lv[5]})`;
-  $("#uvDay").textContent = label.charAt(0).toLowerCase() + label.slice(1);
   $("#uvLevel").textContent = "UV " + lv[0];
   $("#uvNum").textContent = uv;
   $("#uvText").textContent = lv[3];
@@ -1427,7 +1427,7 @@ function renderUV(sel) {
     box.style.setProperty("--uvc", "#5a6a8a"); box.style.setProperty("--uvl", "#9aa8c4");
     box.style.background = "linear-gradient(135deg, #f3f6fb, #e4eaf4)";
     $("#uvLevel").textContent = "UV"; $("#uvNum").textContent = "–";
-    $("#uvText").textContent = "Det finnes bare UV-varsel for de nærmeste dagene.";
+    $("#uvText").textContent = `Det finnes ikke UV-varsel ${d} ennå.`;
   }
 }
 
