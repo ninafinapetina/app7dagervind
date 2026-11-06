@@ -607,10 +607,10 @@ function outfitAt(hrs, i) {
     const h = { ...hrs[i], temp: avg, feels: use.reduce((a, x) => a + x.feels, 0) / use.length,
       wind: Math.max(...use.map(x => x.wind || 0)), gust: Math.max(...use.map(x => x.gust || 0)),
       type: day.reduce((a, x) => (RANK.indexOf(x.type) > RANK.indexOf(a) ? x.type : a), "clear") };
-    // mye regn (5 mm eller mer i løpet av dagen, torden eller kraftig regn) = regntøy; litt regn = paraply
-    const total = day.reduce((a, x) => a + (WET_TYPES.includes(x.type) ? x.precip : 0), 0);
-    if (h.type === "thunder" || h.type === "heavy" || total >= 5) return "n10";
-    if (WET_TYPES.includes(h.type)) return "n01p";
+    // regn hele dagen (alle periodene på dagtid) = regntøy; regn av og til = paraply
+    const wetDay = daytime.length ? daytime : day;
+    if (h.type === "thunder" || h.type === "heavy") return "n10";
+    if (WET_TYPES.includes(h.type)) return wetDay.every(x => WET_TYPES.includes(x.type)) ? "n10" : "n01p";
     return outfitFor(h);
   }
   const w2 = hrs.slice(i, i + 2), w4 = hrs.slice(i, i + 4);
@@ -1039,7 +1039,9 @@ function renderSel() {
     state.outfit = key;
   }
   let extra = "";
-  if (h.type === "thunder") extra = "Det tordner, så hold deg gjerne inne!";
+  const rainWind = ["light", "rain", "heavy", "thunder"].includes(h.type) && (h.wind || 0) > 10;
+  if (rainWind) extra = h.type === "thunder" ? "Det tordner, regner og blåser mye!" : "Det regner og blåser mye!";
+  else if (h.type === "thunder") extra = "Det tordner, så hold deg gjerne inne!";
   else if (h.type === "heavy") extra = "Det regner mye nå.";
   else if (h.type === "snow") extra = "Det snør! Perfekt for snømann.";
   else if (!long && coolerLater(i)) extra = coolerLater(i);
