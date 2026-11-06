@@ -249,14 +249,15 @@ h1 {
 /* ---------- UV ---------- */
 .uv {
   position: relative; z-index: 4; align-self: flex-end; margin-top: -54px; margin-right: 6px;
-  width: min(420px, 100%); display: flex; align-items: center; gap: 14px; padding: 18px 22px 18px 28px;
+  width: min(500px, 100%); display: flex; align-items: center; gap: 14px; padding: 18px 22px 18px 28px;
   background: linear-gradient(135deg, #f2fbef, #ddf3e3); border: 4px solid #fff; border-radius: 30px; box-shadow: var(--shadow);
 }
 .uv h3 { margin: 0; display: flex; align-items: center; gap: 12px; font: 700 2.5rem/1 var(--display); color: var(--uvc, #217a1d); }
 .uv .num { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font: 700 1.55rem var(--display); color: #fff; background: radial-gradient(circle at 35% 30%, var(--uvl, #5bd44f), var(--uvc, #24992b)); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.15); }
 .uv p { margin: 8px 0 0; font: 600 1.3rem/1.25 var(--display); color: #1d2a63; }
 .uv .txt { flex: 1; min-width: 0; }
-.uv .uv-day { font: 800 0.95rem var(--body); color: var(--ink-soft); letter-spacing: 0.02em; margin-bottom: 4px; }
+.uv h3 { flex-wrap: wrap; }
+.uv .uv-day { color: var(--uvc, #217a1d); font-size: 0.75em; white-space: nowrap; }
 .uv svg { flex: none; }
 
 /* ---------- responsive ---------- */
@@ -445,8 +446,7 @@ h1 {
   </section>
   <aside class="uv" id="uv">
     <div class="txt">
-      <div class="uv-day" id="uvDay">I dag</div>
-      <h3><span id="uvLevel">UV lav</span><span class="num" id="uvNum">1</span></h3>
+      <h3><span id="uvLevel">UV lav</span><span class="num" id="uvNum">1</span><span class="uv-day" id="uvDay">i dag</span></h3>
       <p id="uvText">Du trenger ikke solkrem i dag.</p>
     </div>
     <svg width="96" height="124" viewBox="0 0 96 124" aria-hidden="true">
@@ -1419,7 +1419,7 @@ function renderUV(sel) {
   const box = $("#uv");
   box.style.setProperty("--uvc", lv[1]); box.style.setProperty("--uvl", lv[2]);
   box.style.background = `linear-gradient(135deg, ${lv[4]}, ${lv[5]})`;
-  $("#uvDay").textContent = label;
+  $("#uvDay").textContent = label.charAt(0).toLowerCase() + label.slice(1);
   $("#uvLevel").textContent = "UV " + lv[0];
   $("#uvNum").textContent = uv;
   $("#uvText").textContent = lv[3];
