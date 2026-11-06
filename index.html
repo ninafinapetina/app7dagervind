@@ -566,10 +566,11 @@ const WET_TYPES = ["light", "rain", "heavy", "thunder"];
 const RANK = ["clear", "partly", "cloudy", "snow", "light", "rain", "heavy", "thunder"];
 // klær velges for et 2-timers vindu fra valgt time, så figuren ikke hopper for mye.
 // Kommer det regn i løpet av de 2 timene, sjekkes 4 timer: sammenhengende regn = regntøy, regn av og på (byger) = paraply.
-// skoledager (mandag–fredag) fra i morgen av i 7-dagersvisningen: 1 = først på dagen (før kl 16), 2 = senere på dagen
+// bare i morgen, og bare når i morgen er en skoledag (mandag–fredag): 1 = først på dagen (før kl 16), 2 = senere på dagen.
+// Resten av langtidsvarselet har ett bilde for hele dagen.
 function tomorrowPart(h) {
-  const now = new Date();
-  if (sameDay(h.t, now) || h.t < now) return 0;
+  const tm = new Date(); tm.setDate(tm.getDate() + 1);
+  if (!sameDay(h.t, tm)) return 0;
   const wd = h.t.getDay();
   if (wd === 0 || wd === 6) return 0;    // helg: ett bilde for hele dagen
   return h.t.getHours() < 16 ? 1 : 2;
