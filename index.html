@@ -1389,8 +1389,9 @@ function startRadar() {
 
 /* ======================= UV ======================= */
 function renderUV() {
-  const today = state.hours.filter(h => sameDay(h.t, state.hours[0].t));
-  const pool = today.length > 3 ? today : state.hours;
+  // høyeste UV de neste 24 timene. «I dag» etter norsk klokke passer ikke for steder i andre tidssoner
+  // (f.eks. Bangkok, der det er natt når det er kveld i Norge), så vi ser på hele neste døgn.
+  const pool = state.hours.slice(0, 24);
   const uv = Math.round(Math.max(...pool.map(h => h.uv)));
   const lv = uv <= 2 ? ["lav", "#217a1d", "#62d655", "Du trenger ikke solkrem i dag.", "#f2fbef", "#ddf3e3"]
     : uv <= 5 ? ["moderat", "#9a6a00", "#ffd84a", "Bruk solkrem midt på dagen.", "#fffbe8", "#fff0bf"]
