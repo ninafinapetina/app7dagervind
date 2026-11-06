@@ -566,27 +566,31 @@ const WET_TYPES = ["light", "rain", "heavy", "thunder"];
 const RANK = ["clear", "partly", "cloudy", "snow", "light", "rain", "heavy", "thunder"];
 // klær velges for et 2-timers vindu fra valgt time, så figuren ikke hopper for mye.
 // Kommer det regn i løpet av de 2 timene, sjekkes 4 timer: sammenhengende regn = regntøy, regn av og på (byger) = paraply.
-// i morgen i 7-dagersvisningen: 1 = fram til kl 16 (skoletid), 2 = etter kl 16
+// skoledager (mandag–fredag) fra i morgen av i 7-dagersvisningen: 1 = først på dagen (før kl 16), 2 = senere på dagen
 function tomorrowPart(h) {
-  const tm = new Date(); tm.setDate(tm.getDate() + 1);
-  if (!sameDay(h.t, tm)) return 0;
+  const now = new Date();
+  if (sameDay(h.t, now) || h.t < now) return 0;
+  const wd = h.t.getDay();
+  if (wd === 0 || wd === 6) return 0;    // helg: ett bilde for hele dagen
   return h.t.getHours() < 16 ? 1 : 2;
 }
 function outfitAt(hrs, i) {
   if (state.view === "long" && tomorrowPart(hrs[i])) {
-    // i morgen: ett bilde fram til skoleslutt (kl 06–16) og ett for ettermiddag og kveld (kl 16–22), ut fra timevarselet
+    // skoledager: ett bilde først på dagen (kl 06–16) og ett senere på dagen (kl 16–22), fra timevarselet når det finnes
     const part = tomorrowPart(hrs[i]), d0 = new Date(hrs[i].t);
     const from = new Date(d0); from.setHours(part === 1 ? 6 : 16, 0, 0, 0);
     const to = new Date(d0); to.setHours(part === 1 ? 16 : 22, 0, 0, 0);
-    const win = (state.allHours || []).filter(x => x.t >= from && x.t < to);
-    if (win.length >= 3) {
+    let win = (state.allHours || []).filter(x => x.t >= from && x.t < to);
+    if (win.length < 3) win = hrs.filter(x => sameDay(x.t, d0) && (part === 1 ? x.t.getHours() >= 4 && x.t.getHours() < 16 : x.t.getHours() >= 16));   // lenger fram: 6-timersverdiene
+    if (win.length) {
       const wet = win.filter(x => WET_TYPES.includes(x.type));
       const avg = win.reduce((a, x) => a + x.temp, 0) / win.length;
       const h = { ...hrs[i], temp: avg, feels: win.reduce((a, x) => a + x.feels, 0) / win.length,
         wind: Math.max(...win.map(x => x.wind || 0)), gust: Math.max(...win.map(x => x.gust || 0)),
         type: win.reduce((a, x) => (RANK.indexOf(x.type) > RANK.indexOf(a) ? x.type : a), "clear") };
       if (wet.length) {
-        if (h.type === "thunder" || h.type === "heavy" || wet.length >= win.length * 0.8) return "n10";   // vedvarende regn = regnjakke
+        const total = wet.reduce((a, x) => a + x.precip, 0);
+        if (h.type === "thunder" || h.type === "heavy" || (win.length >= 3 && wet.length >= win.length * 0.8) || total >= 3) return "n10";   // vedvarende eller mye regn = regnjakke
         return "n01p";                                                                                  // ellers paraply
       }
       if (h.type === "snow") return "n03";
@@ -875,13 +879,26 @@ function renderChart() {
   if (!long) {
     hrs.forEach((h, i) => { if (h.precip > 0) bar(clamp(x(i) - bw / 2, m.l, m.l + pw - bw), bw, h.precip); });
   } else {
-    // 7 dager: nøyaktig slik MET varsler – nedbør for 6 timer fra hvert tidspunkt (kl 01–07, 07–13, 13–19, 19–01 vintertid)
-    const st = pw / (n - 1), gap = st * 0.08;
-    hrs.forEach((h, i) => {
-      if (h.precip <= 0) return;
-      const bx = x(i) + gap, bwi = Math.min(st - 2 * gap, m.l + pw - bx);
-      if (bwi > 1) bar(bx, bwi, h.precip);
-    });
+    // 7 dager: søylene står i faste 6-timersperioder i norsk tid (00–06, 06–12, 12–18, 18–24).
+    // Der timevarselet (MEPS) finnes, summeres timene i perioden. Lenger fram brukes MET sin 6-timersverdi,
+    // flyttet til nærmeste periode (kl 01–07 vintertid → 00–06).
+    const t0 = +hrs[0].t, t1 = +hrs[n - 1].t, HOUR = 3600e3;
+    const xt = t => m.l + (t - t0) / (t1 - t0) * pw;
+    const hourly = state.allHours || [], lastHourly = hourly.length ? +hourly[hourly.length - 1].t : 0;
+    const start = new Date(t0 - 6 * HOUR); start.setHours(Math.floor(start.getHours() / 6) * 6, 0, 0, 0);
+    for (let b0 = +start; b0 < t1; ) {
+      const nb = new Date(b0); nb.setHours(nb.getHours() + 6); const b1 = +nb;
+      let amount = null;
+      if (hourly.length && +hourly[0].t <= b0 && lastHourly >= b1 - HOUR) {
+        amount = hourly.filter(x => +x.t >= b0 && +x.t < b1).reduce((a, x) => a + x.precip, 0);
+      } else {
+        const src = hrs.find(x => Math.abs(+x.t - b0) <= 2.5 * HOUR);
+        if (src) amount = src.precip;
+      }
+      const xa = Math.max(xt(b0), m.l), xb = Math.min(xt(b1), m.l + pw), gap = (xt(b1) - xt(b0)) * 0.08;
+      if (amount >= 0.1 && xb - xa > 2 * gap + 1) bar(xa + gap, xb - xa - 2 * gap, Math.round(amount * 10) / 10);
+      b0 = b1;
+    }
   }
   // akser
   g += `<path d="M${m.l} ${m.t - 6}V${m.t + ph}H${m.l + pw}V${m.t - 6}" fill="none" stroke="var(--axis)" stroke-width="1.6"/>`;
@@ -1031,7 +1048,7 @@ function renderSel() {
   // natt (kl 22–06): hun minner om at man helst bør sove, men gir klesrådet likevel
   const hr = h.t.getHours(), night = hr >= 22 || hr < 6;
   const part = long ? tomorrowPart(h) : 0;
-  let main = FIG_TEXT[key].say(long ? (part === 1 ? "I morgen fram til kl 16" : part === 2 ? "I morgen etter kl 16" : dayName === "I dag" ? dayName : "På " + DAYS[h.t.getDay()]) : whenWords(h, i));
+  let main = FIG_TEXT[key].say(long ? (part ? `${dayName === "I morgen" ? "I morgen" : "På " + DAYS[h.t.getDay()]} ${part === 1 ? "først på dagen" : "senere på dagen"}` : dayName === "I dag" || dayName === "I morgen" ? dayName : "På " + DAYS[h.t.getDay()]) : whenWords(h, i));
   if (night && !long) {
     const rest = key === "n09" ? "trenger du <b>vindjakke og skjerf</b>, for det blåser!" : key === "n01p" ? "ta med <b>paraply</b>, for det kommer litt regn innimellom!" : FIG_TEXT[key].say("").trim();
     main = `I natt bør du helst sove! Men hvis du må ut og reise, ${rest}`;
