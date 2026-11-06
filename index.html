@@ -566,7 +566,21 @@ const RANK = ["clear", "partly", "cloudy", "snow", "light", "rain", "heavy", "th
 // klær velges for et 2-timers vindu fra valgt time, så figuren ikke hopper for mye.
 // Kommer det regn i løpet av de 2 timene, sjekkes 4 timer: sammenhengende regn = regntøy, regn av og på (byger) = paraply.
 function outfitAt(hrs, i) {
-  if (state.view === "long") return outfitFor(hrs[i]);
+  if (state.view === "long") {
+    // 7 dager: ett bilde for hele dagen. Regn = paraply (regntøy hvis det regner hele dagen), ellers etter temperaturen på dagtid
+    const day = hrs.filter(x => sameDay(x.t, hrs[i].t));
+    const daytime = day.filter(x => x.t.getHours() >= 7 && x.t.getHours() <= 19);
+    const use = daytime.length ? daytime : day;
+    const avg = use.reduce((a, x) => a + x.temp, 0) / use.length;
+    const h = { ...hrs[i], temp: avg, feels: use.reduce((a, x) => a + x.feels, 0) / use.length,
+      wind: Math.max(...use.map(x => x.wind || 0)), gust: Math.max(...use.map(x => x.gust || 0)),
+      type: day.reduce((a, x) => (RANK.indexOf(x.type) > RANK.indexOf(a) ? x.type : a), "clear") };
+    // mye regn (5 mm eller mer i løpet av dagen, torden eller kraftig regn) = regntøy; litt regn = paraply
+    const total = day.reduce((a, x) => a + (WET_TYPES.includes(x.type) ? x.precip : 0), 0);
+    if (h.type === "thunder" || h.type === "heavy" || total >= 5) return "n10";
+    if (WET_TYPES.includes(h.type)) return "n01p";
+    return outfitFor(h);
+  }
   const w2 = hrs.slice(i, i + 2), w4 = hrs.slice(i, i + 4);
   const worst = w2.reduce((a, b) => (RANK.indexOf(b.type) > RANK.indexOf(a.type) ? b : a));
   const h = { ...hrs[i],
