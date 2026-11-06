@@ -256,6 +256,7 @@ h1 {
 .uv .num { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font: 700 1.55rem var(--display); color: #fff; background: radial-gradient(circle at 35% 30%, var(--uvl, #5bd44f), var(--uvc, #24992b)); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.15); }
 .uv p { margin: 8px 0 0; font: 600 1.3rem/1.25 var(--display); color: #1d2a63; }
 .uv .txt { flex: 1; min-width: 0; }
+.uv .uv-day { font: 800 0.95rem var(--body); color: var(--ink-soft); letter-spacing: 0.02em; margin-bottom: 4px; }
 .uv svg { flex: none; }
 
 /* ---------- responsive ---------- */
@@ -444,6 +445,7 @@ h1 {
   </section>
   <aside class="uv" id="uv">
     <div class="txt">
+      <div class="uv-day" id="uvDay">I dag</div>
       <h3><span id="uvLevel">UV lav</span><span class="num" id="uvNum">1</span></h3>
       <p id="uvText">Du trenger ikke solkrem i dag.</p>
     </div>
@@ -717,7 +719,7 @@ async function fetchMet(city) {
       if (!n1) break;                      // etter ca. 2,5 døgn kommer bare 6-timersverdier
       const p = n1.details.precipitation_amount || 0;
       hours.push({ t: new Date(t), temp: d.air_temperature, feels: d.apparent_air_temperature ?? d.air_temperature, precip: p,
-        type: metType(n1.summary.symbol_code, p), uv: d.ultraviolet_index_clear_sky || 0, wind: d.wind_speed || 0 });
+        type: metType(n1.summary.symbol_code, p), uv: d.ultraviolet_index_clear_sky ?? null, wind: d.wind_speed || 0 });
     }
     if (hours.length < 25) throw new Error("met for kort");
     const allHours = hours.splice(25);
@@ -730,7 +732,7 @@ async function fetchMet(city) {
       if (t > now + 7 * 864e5) break;
       const d = e.data.instant.details, p = n6.details.precipitation_amount || 0;
       long.push({ t: new Date(t), temp: d.air_temperature, feels: d.apparent_air_temperature ?? d.air_temperature, precip: p,
-        type: metType(n6.summary.symbol_code, p / 6), uv: d.ultraviolet_index_clear_sky || 0, wind: d.wind_speed || 0, six: true });
+        type: metType(n6.summary.symbol_code, p / 6), uv: d.ultraviolet_index_clear_sky ?? null, wind: d.wind_speed || 0, six: true });
     }
     if (long.length >= 12) hours.long = long;
     return hours;
@@ -790,7 +792,7 @@ async function load(city) {
     return;
   }
   if (city !== state.city) return;
-  state.hours = hours; state.live = true; state.sel = 0;
+  state.hours = hours; state.live = true; state.sel = 0; state.uvKey = null;
   state.long = hours.long || null;
   state.allHours = hours.all || hours;
   state.view = "day";   // nytt sted: start alltid med neste 24 timer
@@ -1027,6 +1029,7 @@ function renderSel() {
     `<path d="M${px} ${m.t + ph}v${small ? 6 : 9}" stroke="#2f5fc8" stroke-width="2" stroke-dasharray="5 4"/>` +
     `<circle cx="${px}" cy="${py}" r="${small ? 6 : 8.5}" fill="#fff" stroke="${h.temp < 0 ? "#1f6fe0" : "var(--line)"}" stroke-width="3"/>`;
   $("#chart").setAttribute("aria-valuenow", i);
+  if (state.uvKey !== h.t.toDateString()) { state.uvKey = h.t.toDateString(); renderUV(h); }
   $("#chart").setAttribute("aria-valuetext", `${$("#tipWhen").textContent}, ${fmt(h.temp)} grader, føles som ${fmt(h.feels)}, ${WX_NAME[h.type]}`);
   document.querySelectorAll(".sym").forEach(el => el.classList.toggle("on", +el.dataset.k === Math.min(state.symK - 1, Math.floor(i / state.symPer))));
 
@@ -1388,12 +1391,27 @@ function startRadar() {
 }
 
 /* ======================= UV ======================= */
-function renderUV() {
-  // høyeste UV de neste 24 timene. «I dag» etter norsk klokke passer ikke for steder i andre tidssoner
-  // (f.eks. Bangkok, der det er natt når det er kveld i Norge), så vi ser på hele neste døgn.
-  const pool = state.hours.slice(0, 24);
-  const uv = Math.round(Math.max(...pool.map(h => h.uv)));
-  const lv = uv <= 2 ? ["lav", "#217a1d", "#62d655", "Du trenger ikke solkrem i dag.", "#f2fbef", "#ddf3e3"]
+// dato for et tidspunkt i stedets egen tidssone (norsk tid for steder uten kjent tidssone)
+function dayKey(t) {
+  const tz = state.city && state.city.tz;
+  if (tz) { try { return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(t); } catch {} }
+  return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+}
+const MONTHS = ["jan.", "feb.", "mars", "april", "mai", "juni", "juli", "aug.", "sep.", "okt.", "nov.", "des."];
+// UV-boksen følger dagen man står på i meteogrammet: høyeste UV den dagen (i stedets egen tid)
+function renderUV(sel) {
+  // samme dag som meteogrammet viser (kl 12 norsk tid den dagen), regnet om til stedets egen dato
+  const ref = new Date(sel ? sel.t : Date.now()); ref.setHours(12, 0, 0, 0);
+  const key = dayKey(ref);
+  const all = (state.allHours || state.hours).concat((state.long || []).filter(x => !state.allHours || x.t > state.allHours[state.allHours.length - 1].t));
+  let pool = all.filter(x => dayKey(x.t) === key);
+  if (!pool.length) pool = state.hours.slice(0, 24);
+  const known = pool.filter(h => h.uv != null);
+  const uv = Math.round(Math.max(0, ...known.map(h => h.uv)));
+  const now = new Date(), tm = new Date(now); tm.setDate(tm.getDate() + 1);
+  const label = sameDay(ref, now) ? "I dag" : sameDay(ref, tm) ? "I morgen"
+    : `${DAYS[ref.getDay()][0].toUpperCase() + DAYS[ref.getDay()].slice(1)} ${ref.getDate()}. ${MONTHS[ref.getMonth()]}`;
+  const lv = uv <= 2 ? ["lav", "#217a1d", "#62d655", "Du trenger ikke solkrem.", "#f2fbef", "#ddf3e3"]
     : uv <= 5 ? ["moderat", "#9a6a00", "#ffd84a", "Bruk solkrem midt på dagen.", "#fffbe8", "#fff0bf"]
     : uv <= 7 ? ["høy", "#c2510b", "#ffa04a", "Husk solkrem, solhatt og skygge!", "#fff4e8", "#ffe0c2"]
     : uv <= 10 ? ["svært høy", "#b3171f", "#ff6a6a", "Hold deg i skyggen midt på dagen og bruk mye solkrem!", "#fff0ef", "#ffd6d3"]
@@ -1401,9 +1419,16 @@ function renderUV() {
   const box = $("#uv");
   box.style.setProperty("--uvc", lv[1]); box.style.setProperty("--uvl", lv[2]);
   box.style.background = `linear-gradient(135deg, ${lv[4]}, ${lv[5]})`;
+  $("#uvDay").textContent = label;
   $("#uvLevel").textContent = "UV " + lv[0];
   $("#uvNum").textContent = uv;
   $("#uvText").textContent = lv[3];
+  if (!known.length) {   // MET gir bare UV for de nærmeste ca. 3 dagene
+    box.style.setProperty("--uvc", "#5a6a8a"); box.style.setProperty("--uvl", "#9aa8c4");
+    box.style.background = "linear-gradient(135deg, #f3f6fb, #e4eaf4)";
+    $("#uvLevel").textContent = "UV"; $("#uvNum").textContent = "–";
+    $("#uvText").textContent = "Det finnes bare UV-varsel for de nærmeste dagene.";
+  }
 }
 
 /* ======================= Kart (Natural Earth-data, Web Mercator) ======================= */
@@ -1649,7 +1674,7 @@ $("#favBtn").addEventListener("click", () => {
   const c = state.city;
   try {
     if (isFav(c)) localStorage.removeItem("vaer-favoritt");
-    else localStorage.setItem("vaer-favoritt", JSON.stringify({ name: c.name, lat: c.lat, lon: c.lon, coast: c.coast, region: c.region }));
+    else localStorage.setItem("vaer-favoritt", JSON.stringify({ name: c.name, lat: c.lat, lon: c.lon, coast: c.coast, region: c.region, tz: c.tz }));
   } catch {}
   updateFav();
   const b = $("#favBtn"); if (!reduceMotion) { b.classList.remove("pop"); void b.offsetWidth; b.classList.add("pop"); }
@@ -1667,7 +1692,7 @@ async function geocode(text) {
   try {
     const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(text)}&count=6&language=nb&format=json`, { signal: ctl.signal });
     const j = await r.json();
-    return (j.results || []).map(x => ({ name: x.name, lat: x.latitude, lon: x.longitude, coast: hash(x.name) % 2 === 0, region: [x.admin1, x.country].filter(Boolean).join(", ") }));
+    return (j.results || []).map(x => ({ name: x.name, lat: x.latitude, lon: x.longitude, coast: hash(x.name) % 2 === 0, region: [x.admin1, x.country].filter(Boolean).join(", "), tz: x.timezone }));
   } finally { clearTimeout(tm); }
 }
 q.addEventListener("input", () => {
